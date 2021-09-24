@@ -1,110 +1,113 @@
 FROM        ubuntu:20.04
-MAINTAINER  mersshs@gmail.com
-RUN         apt-get -y update
+
+ENV TZ=Asia/Seoul
+RUN apt-get -y update \
+  && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # install common build packages
 WORKDIR /root
-RUN apt-get -y install build-essential git-all wget curl vim software-properties-common
+RUN apt-get -y install build-essential git-all wget curl vim software-properties-common m4
 
 # install python/pip
-RUN add-apt-repository ppa:deadsnakes/ppa
-RUN apt-get install python3.9
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.9 3
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 3
-RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-RUN python get-pip.py
-RUN rm get-pip.py
-RUN python -m pip install toml
+RUN add-apt-repository ppa:deadsnakes/ppa  \
+  && apt-get -y install python3.9 \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3.9 3 \
+  && apt-get -y install python3-distutils \
+  && curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
+  && python get-pip.py \
+  && rm get-pip.py \
+  && python -m pip install toml
 
-# install cmake/ninja-build
-RUN wget https://github.com/Kitware/CMake/releases/download/v3.21.3/cmake-3.21.3-linux-x86_64.sh
-RUN bash ./cmake-3.21.3-linux-x86_64.sh
-RUN rm cmake-3.21.3-linux-x86_64.sh
-RUN mv cmake-3.21.3-linux-x86_64 cmake
+# install cmake
+RUN mkdir -p /root/lib/cmake \
+  && wget https://github.com/Kitware/CMake/releases/download/v3.21.3/cmake-3.21.3-linux-x86_64.sh \
+  && bash ./cmake-3.21.3-linux-x86_64.sh --skip-license --prefix=/root/lib/cmake \
+  && rm cmake-3.21.3-linux-x86_64.sh
+ENV PATH "$PATH:/root/lib/cmake/bin"
 
-ENV PATH "$PATH:/root/cmake/bin"
-RUN apt-get install ninja-build
+# install ninja-build
+RUN apt-get -y install ninja-build
 
 # install clang/llvm
-RUN wget https://apt.llvm.org/llvm.sh
-RUN bash llvm.sh 13
-RUN rm llvm.sh
-ENV PATH "$PATH:/usr/lib/llvm-13"
+RUN wget https://apt.llvm.org/llvm.sh \
+  && bash llvm.sh 13 \
+  && rm llvm.sh
+
+ENV PATH "$PATH:/usr/lib/llvm-13/bin"
 
 # install node
-RUN apt-get -y install nodejs
-RUN wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
-RUN source ~/.bashrc
-RUN nvm install lts/erbium
+ENV NVM_DIR /root/.nvm
+ENV NODE_VERSION 12.22.6
+
+RUN curl https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash \
+  && . $NVM_DIR/nvm.sh \
+  && nvm install $NODE_VERSION \
+  && nvm alias default $NODE_VERSION \
+  && nvm use default
+
+ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
+ENV PATH      $NVM_DIR/v$NODE_VERSION/bin:$PATH
 
 # install jvm
-RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0xB1998361219BD9C9
-RUN curl -O https://cdn.azul.com/zulu/bin/zulu-repo_1.0.0-2_all.deb
-RUN apt-get -y install ./zulu-repo_1.0.0-2_all.deb
-RUN apt-get update
-RUN apt-get -y install zulu11-jdk
-RUN rm ./zulu-repo_1.0.0-2_all.deb
+RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0xB1998361219BD9C9 \
+  && curl -O https://cdn.azul.com/zulu/bin/zulu-repo_1.0.0-2_all.deb \
+  && apt-get -y install ./zulu-repo_1.0.0-2_all.deb \
+  && apt-get update \
+  && apt-get -y install zulu11-jdk \
+  && rm ./zulu-repo_1.0.0-2_all.deb
 
 # clone dependencies
-RUN git clone --depth=1 https://github.com/llvm/llvm-project.git
-RUN git clone --depth=1 https://github.com/Z3Prover/z3
-RUN git clone --depth=1 https://github.com/cvc5/cvc5
-RUN git clone https://github.com/aqjune/mlir-tv
-RUN git clone https://github.com/MerHS/compiler-explorer
-RUN mkdir -p /root/lib/llvm
-RUN mkdir -p /root/lib/z3
-RUN mkdir -p /root/lib/cvc5
-RUN mkdir -p /root/mlir-tv/build
+RUN git clone --depth=1 https://github.com/llvm/llvm-project.git \
+  && git clone --depth=1 https://github.com/Z3Prover/z3 \
+  && git clone --depth=1 https://github.com/cvc5/cvc5 \
+  && git clone https://github.com/aqjune/mlir-tv \
+  && git clone https://github.com/MerHS/compiler-explorer \
+  && mkdir -p /root/lib/llvm \
+  && mkdir -p /root/lib/z3 \
+  && mkdir -p /root/lib/cvc5 \
+  && mkdir -p /root/mlir-tv/build \
+  && mkdir -p /root/llvm-project/build  \
+  && mkdir -p /root/z3/build \
+  && mkdir -p /root/cvc5/build
 
 # build llvm
-RUN mkdir -p /root/llvm-project/build
 WORKDIR /root/llvm-project/build
 RUN cmake -G Ninja ../llvm \
-    -DLLVM_ENABLE_PROJECTS='clang;libcxx;libcxxabi;mlir' \
-    -DLLVM_BUILD_EXAMPLES=ON \
-    -DLLVM_TARGETS_TO_BUILD="X86;NVPTX;AMDGPU" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_ENABLE_ASSERTIONS=ON \
-    -DCMAKE_INSTALL_PREFIX=/root/lib/llvm \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
-    -DLLVM_ENABLE_LLD=ON
+  -DLLVM_ENABLE_PROJECTS='clang;libcxx;libcxxabi;mlir' \
+  -DLLVM_BUILD_EXAMPLES=ON \
+  -DLLVM_TARGETS_TO_BUILD="X86;NVPTX;AMDGPU" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_ASSERTIONS=ON \
+  -DCMAKE_INSTALL_PREFIX=/root/lib/llvm \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_CXX_COMPILER=clang++ \
+  -DLLVM_ENABLE_LLD=ON
 RUN cmake --build .
 RUN cmake --build . --target install
 
-WORKDIR /root
-RUN rm -rf llvm-project
-
 # build z3
-RUN mkdir -p /root/z3/build
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 3
 WORKDIR /root/z3
 RUN CXX=clang++ CC=clang python scripts/mk_make.py --prefix=/root/lib/z3
 WORKDIR /root/z3/build
-RUN make -j8
-RUN make install
-
-WORKDIR /root
-RUN rm -rf z3
+RUN make -j8 && make install
 
 # build cvc5
-RUN mkdir -p /root/cvc5/build
 WORKDIR /root/cvc5
 RUN bash ./configure.sh --prefix=/root/lib/cvc5 --auto-download
 WORKDIR /root/cvc5/build
-RUN make -j8
-RUN make check
-RUN make install
+RUN make -j8 && make check && make install
 
-WORKDIR /root
-RUN rm -rf cvc5
+# clean repositories
+RUN rm -rf /root/llvm-project /root/cvc5 /root/z3
 
 # build mlir-tv
 WORKDIR /root/mlir-tv/build
 RUN cmake -DMLIR_DIR=/root/lib/llvm \
-      -DZ3_DIR=/root/lib/z3 \
-      -DCVC5_DIR=/root/lib/cvc5 \
-      -DCMAKE_BUILD_TYPE=RELEASE \
-      ..
+  -DZ3_DIR=/root/lib/z3 \
+  -DCVC5_DIR=/root/lib/cvc5 \
+  -DCMAKE_BUILD_TYPE=RELEASE \
+  ..
 RUN cmake --build .
 
 # run compiler explorer
