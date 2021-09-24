@@ -98,6 +98,7 @@ function Compiler(hub, container, state) {
     this.deviceViewOpen = false;
     this.options = state.options || options.compileOptions[this.currentLangId];
     this.source = '';
+    this.subSource =  '';
     this.assembly = [];
     this.colours = [];
     this.lastResult = {};
@@ -730,9 +731,24 @@ Compiler.prototype.compileFromTree = function (options, bypassCache) {
 };
 
 Compiler.prototype.compileFromEditorSource = function (options, bypassCache) {
-    this.compilerService.expand(this.source).then(_.bind(function (expanded) {
+    var send = _.bind(function (expanded) {
+        var source = '';
+        var subSource = '';
+
+        if (_.isArray(expanded)) {
+            if (expanded.length >= 1) {
+                source = expanded[0];
+                if (expanded.length >= 2) {
+                    subSource = expanded[1];
+                }
+            }
+        } else {
+            source = expanded || '';
+        }
+
         var request = {
-            source: expanded || '',
+            source: source,
+            subSource: subSource,
             compiler: this.compiler ? this.compiler.id : '',
             options: options,
             lang: this.currentLangId,
@@ -744,7 +760,16 @@ Compiler.prototype.compileFromEditorSource = function (options, bypassCache) {
         } else {
             this.sendCompile(request);
         }
-    }, this));
+    }, this);
+
+    if (this.subSource) {
+        Promise.all([
+            this.compilerService.expand(this.source),
+            this.compilerService.expand(this.subSource),
+        ]).then(send);
+    } else {
+        this.compilerService.expand(this.source).then(send);
+    }
 };
 
 Compiler.prototype.sendCMakeCompile = function (request) {
@@ -1086,12 +1111,19 @@ Compiler.prototype.onEditorChange = function (editor, source, langId, compilerId
         }
     }
 
-    if (editor === this.sourceEditorId && langId === this.currentLangId &&
-        (compilerId === undefined || compilerId === this.id)) {
-        this.source = source;
-        if (this.settings.compileOnChange) {
-            this.compile();
+    if (langId === this.currentLangId && (compilerId === undefined || compilerId === this.id)) {
+        if (editor === this.sourceEditorId) {
+            this.source = source;
+            if (this.settings.compileOnChange) {
+                this.compile();
+            }
+        } else if (editor === -this.sourceEditorId) {
+            this.subSource = source;
+            if (this.settings.compileOnChange) {
+                this.compile();
+            }
         }
+
     }
 };
 
@@ -2204,7 +2236,7 @@ Compiler.prototype.onMouseMove = function (e) {
                 var editorId = this.getEditorIdBySourcefile(hoverAsm.source);
                 if (editorId) {
                     this.eventHub.emit('editorLinkLine', editorId, sourceLine, sourceColBegin, sourceColEnd, false);
-    
+
                     this.eventHub.emit('panesLinkLine', this.id,
                         sourceLine, sourceColBegin, sourceColEnd,
                         false, this.getPaneName(), editorId);

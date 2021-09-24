@@ -747,7 +747,7 @@ Editor.prototype.initEditorActions = function () {
 
     this.isCpp = this.editor.createContextKey('isCpp', true);
     this.isCpp.set(this.currentLanguage.id === 'c++');
-    
+
     this.isClean = this.editor.createContextKey('isClean', true);
     this.isClean.set(this.currentLanguage.id === 'clean');
 
@@ -1425,7 +1425,12 @@ Editor.prototype.updateTitle = function () {
 
 // Called every time we change language, so we get the relevant code
 Editor.prototype.updateEditorCode = function () {
-    this.setSource(this.editorSourceByLang[this.currentLanguage.id] || languages[this.currentLanguage.id].example);
+    var example = this.editorSourceByLang[this.currentLanguage.id] || languages[this.currentLanguage.id].example;
+    if (this.id < 0 && languages[this.currentLanguage.id].subExample) {
+        example = languages[this.currentLanguage.id].subExample;
+    }
+
+    this.setSource(example);
 };
 
 Editor.prototype.close = function () {

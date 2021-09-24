@@ -464,7 +464,13 @@ function start() {
         content: [{
             type: 'row',
             content: [
-                Components.getEditor(1, defaultLangId),
+                {
+                    type: 'column',
+                    content: [
+                        Components.getEditor(1, defaultLangId),
+                        Components.getEditor(-1, defaultLangId),
+                    ],
+                },
                 Components.getCompiler(1, defaultLangId),
             ],
         }],
