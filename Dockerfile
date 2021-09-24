@@ -45,8 +45,8 @@ RUN curl https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash 
   && nvm alias default $NODE_VERSION \
   && nvm use default
 
-ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
-ENV PATH      $NVM_DIR/v$NODE_VERSION/bin:$PATH
+ENV NODE_PATH $NVM_DIR/versions/node/v$NODE_VERSION/lib/node_modules
+ENV PATH      $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
 
 # install jvm
 RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0xB1998361219BD9C9 \
@@ -56,21 +56,13 @@ RUN apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0xB1998361
   && apt-get -y install zulu11-jdk \
   && rm ./zulu-repo_1.0.0-2_all.deb
 
-# clone dependencies
-RUN git clone --depth=1 https://github.com/llvm/llvm-project.git \
-  && git clone --depth=1 https://github.com/Z3Prover/z3 \
-  && git clone --depth=1 https://github.com/cvc5/cvc5 \
-  && git clone https://github.com/aqjune/mlir-tv \
-  && git clone https://github.com/MerHS/compiler-explorer \
-  && mkdir -p /root/lib/llvm \
+# make build paths
+RUN mkdir -p /root/lib/llvm \
   && mkdir -p /root/lib/z3 \
-  && mkdir -p /root/lib/cvc5 \
-  && mkdir -p /root/mlir-tv/build \
-  && mkdir -p /root/llvm-project/build  \
-  && mkdir -p /root/z3/build \
-  && mkdir -p /root/cvc5/build
+  && mkdir -p /root/lib/cvc5
 
 # build llvm
+RUN git clone --depth=1 https://github.com/llvm/llvm-project.git && mkdir -p /root/llvm-project/build
 WORKDIR /root/llvm-project/build
 RUN cmake -G Ninja ../llvm \
   -DLLVM_ENABLE_PROJECTS='clang;libcxx;libcxxabi;mlir' \
@@ -86,6 +78,8 @@ RUN cmake --build .
 RUN cmake --build . --target install
 
 # build z3
+WORKDIR /root
+RUN git clone --depth=1 https://github.com/Z3Prover/z3 && mkdir -p /root/z3/build
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 3
 WORKDIR /root/z3
 RUN CXX=clang++ CC=clang python scripts/mk_make.py --prefix=/root/lib/z3
@@ -93,6 +87,8 @@ WORKDIR /root/z3/build
 RUN make -j8 && make install
 
 # build cvc5
+WORKDIR /root
+RUN git clone --depth=1 https://github.com/cvc5/cvc5 && mkdir -p /root/cvc5/build
 WORKDIR /root/cvc5
 RUN bash ./configure.sh --prefix=/root/lib/cvc5 --auto-download
 WORKDIR /root/cvc5/build
@@ -102,6 +98,8 @@ RUN make -j8 && make check && make install
 RUN rm -rf /root/llvm-project /root/cvc5 /root/z3
 
 # build mlir-tv
+WORKDIR /root
+RUN git clone https://github.com/aqjune/mlir-tv && mkdir -p /root/mlir-tv/build
 WORKDIR /root/mlir-tv/build
 RUN cmake -DMLIR_DIR=/root/lib/llvm \
   -DZ3_DIR=/root/lib/z3 \
@@ -111,6 +109,10 @@ RUN cmake -DMLIR_DIR=/root/lib/llvm \
 RUN cmake --build .
 
 # run compiler explorer
+WORKDIR /root
+RUN git clone https://github.com/MerHS/compiler-explorer
 WORKDIR /root/compiler-explorer
+RUN echo '#!/usr/bin/bash\ncd /root/compiler-explorer\nmake EXTRA_ARGS="--language mlir-tv"' > /root/run.sh \
+  && chmod +x /root/run.sh
 EXPOSE 10240
-CMD make EXTRA_ARGS="--language mlir-tv"
+CMD ["/root/run.sh"]
